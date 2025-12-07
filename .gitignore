@@ -1,6 +1,23 @@
+# --- Python ---
 __pycache__/
+*.pyc
+
+# --- Jupyter ---
 .ipynb_checkpoints/
+
+# --- Environment ---
 .env
-data/raw/*
-data/external/*
+.env.*
+
+# --- Data (DO NOT COMMIT DATA) ---
+data/raw/
+data/external/
+data/processed/
+data/cleaned/
+data/master/
+
+# --- CSVs (generated outputs) ---
 *.csv
+
+# --- IDE ---
+.vscode/
