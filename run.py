@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-Future_Alpha - Daily Ranking Pipeline
+Future_Alpha - Daily Ranking + Position Sizing Pipeline
 """
 
 print("Future Alpha Ready")
@@ -14,6 +14,7 @@ from src.data.loader import load_clean_daily, load_symbol_history
 from src.features.momentum import add_momentum_features
 from src.features.oi_features import add_oi_features
 from src.signals.rules import build_cross_sectional_score
+from src.portfolio.sizing import vol_target_weights
 from src.utils.logging import setup_logger
 
 
@@ -62,9 +63,6 @@ def main():
 
     logger.info(f"Loaded clean daily FO with {len(daily_df)} rows")
 
-    if "SYMBOL" not in daily_df.columns:
-        raise KeyError("SYMBOL column missing in daily FO")
-
     expiry_col = detect_expiry_column(daily_df)
     close_col = detect_close_column(daily_df)
     oi_col = detect_oi_column(daily_df)
@@ -72,7 +70,7 @@ def main():
     daily_df[expiry_col] = pd.to_datetime(daily_df[expiry_col])
 
     # =================================================
-    # 2️⃣ PICK NEAREST EXPIRY (CURRENT CONTRACT)
+    # 2️⃣ CURRENT CONTRACT
     # =================================================
     idx = daily_df.groupby("SYMBOL")[expiry_col].idxmax()
     daily_today = daily_df.loc[idx].reset_index(drop=True)
@@ -84,7 +82,6 @@ def main():
         }
     )
 
-    # Liquidity
     if "TRDVAL" not in daily_today.columns:
         daily_today["TRDVAL"] = (
             daily_today["VAL_INLAKH"]
@@ -93,88 +90,61 @@ def main():
         )
 
     # =================================================
-    # 3️⃣ BUILD FEATURES FROM CONTINUOUS FUTURES
+    # 3️⃣ CONTINUOUS FEATURES
     # =================================================
-    symbols = get_active_symbols_list()
-    feature_rows = []
-
-    for sym in symbols:
+    rows = []
+    for sym in get_active_symbols_list():
         try:
             hist = load_symbol_history(sym)
         except FileNotFoundError:
             continue
 
-        # normalize continuous data
         hist.columns = [c.lower() for c in hist.columns]
-
-        # --- Momentum (adj_close ONLY) ---
         if "adj_close" not in hist.columns:
             continue
 
         hist = add_momentum_features(hist, price_col="adj_close")
-
-        # --- OI features (oi → OPEN_INT normalized internally)
         hist = add_oi_features(hist)
 
         last = hist.iloc[-1].copy()
         last["SYMBOL"] = sym
+        rows.append(last)
 
-        feature_rows.append(last)
+    feat_df = pd.DataFrame(rows)
 
-    if not feature_rows:
-        raise RuntimeError("No features generated from continuous futures")
-
-    feat_df = pd.DataFrame(feature_rows)
-
-    # =================================================
-    # 4️⃣ MERGE DAILY + FEATURES
-    # =================================================
-    merged = daily_today.merge(
-        feat_df,
-        on="SYMBOL",
-        how="inner",
-    )
-
+    merged = daily_today.merge(feat_df, on="SYMBOL", how="inner")
     logger.info(f"Universe after merge: {len(merged)} symbols")
 
     # =================================================
-    # 5️⃣ BUILD RANKINGS
+    # 4️⃣ RANKINGS
     # =================================================
     ranked = build_cross_sectional_score(merged)
 
     # =================================================
-    # 6️⃣ TOP 5 EXPLANATION
+    # 5️⃣ POSITION SIZING ✅✅✅
     # =================================================
-    top5 = ranked.sort_values("SCORE", ascending=False).head(5).copy()
+    positions = vol_target_weights(
+        ranked,
+        vol_col="vol_20d",
+        target_portfolio_vol=0.18,
+        max_weight=0.20,
+    )
 
-    cols = [
-        "SYMBOL",
-        "mom_3d",
-        "mom_5d",
-        "mom_10d",
-        "oi_breakout",
-        "score_mom",
-        "score_oi",
-        "SCORE",
-        "RANK",
-    ]
+    cols = ["SYMBOL", "RANK", "SCORE", "vol_20d", "weight"]
+    cols = [c for c in cols if c in positions.columns]
 
-    cols = [c for c in cols if c in top5.columns]
+    print("\n📊 FINAL POSITION SIZES:")
+    print(positions[cols].to_string(index=False))
 
-    print("\n📊 TOP 5 RANKING EXPLANATION:")
-    print(top5[cols].to_string(index=False))
-
-    explain_path = PROCESSED_DIR / "daily_ranking_explain_top5.csv"
-    top5[cols].to_csv(explain_path, index=False)
-    logger.info(f"✅ Ranking explanation saved: {explain_path}")
+    pos_path = PROCESSED_DIR / "daily_positions_latest.csv"
+    positions[cols].to_csv(pos_path, index=False)
+    logger.info(f"✅ Daily positions saved: {pos_path}")
 
     # =================================================
-    # 7️⃣ SAVE FULL RANKING
+    # 6️⃣ SAVE RANKING
     # =================================================
-    out_path = PROCESSED_DIR / "daily_ranking_latest.csv"
-    ranked.to_csv(out_path, index=False)
-
-    logger.info(f"✅ Daily ranking saved: {out_path}")
+    ranked.to_csv(PROCESSED_DIR / "daily_ranking_latest.csv", index=False)
+    logger.info("✅ Ranking saved")
 
 
 if __name__ == "__main__":
