@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+"""
+Future_Alpha - Daily Ranking Pipeline
+"""
+
 print("Future Alpha Ready")
 
 import pandas as pd
@@ -10,7 +14,7 @@ from src.data.universe import get_active_symbols_list
 from src.data.loader import load_clean_daily, load_symbol_history
 from src.features.momentum import add_momentum_features
 from src.features.oi_features import add_oi_features
-from src.signals.rules import build_cross_sectional_score
+from src.signals.rules import build_cross_sectional_score, explain_score
 from src.utils.logging import setup_logger
 
 
@@ -139,6 +143,45 @@ def main():
 
     # 5️⃣ Build ranking
     ranked = build_cross_sectional_score(merged)
+    # ---- Explain Top Rankings ----
+    # ---- Explain Top Rankings (robust, direct) ----
+    top5 = (
+        ranked
+        .sort_values("SCORE", ascending=False)
+        .head(5)
+        .copy()
+    )
+
+    cols_to_show = [
+        "SYMBOL",
+        "mom_3d",
+        "mom_5d",
+        "mom_10d",
+        "oi_breakout",
+        "score_mom",
+        "score_oi",
+        "SCORE",
+        "RANK",
+]
+
+# Keep only existing columns (defensive)
+    cols_to_show = [c for c in cols_to_show if c in top5.columns]
+
+    print("\n📊 TOP 5 RANKING EXPLANATION:")
+    print(top5[cols_to_show].to_string(index=False))
+
+    explain_path = PROCESSED_DIR / "daily_ranking_explain_top5.csv"
+    top5[cols_to_show].to_csv(explain_path, index=False)
+    logger.info(f"✅ Ranking explanation saved: {explain_path}")
+
+
+    
+    
+    
+    
+    
+
+
 
     # 6️⃣ Save output
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)

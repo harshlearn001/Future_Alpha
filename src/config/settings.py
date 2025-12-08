@@ -15,8 +15,8 @@ class FeatureSettings:
 
 @dataclass
 class SignalSettings:
-    top_n: int = 20          # cross-sectional top N
-    min_liquidity: float = 1e7   # example: min notional turnover
+    top_n: int = 5         # cross-sectional top N
+    min_liquidity: float = 0   # example: min notional turnover
     max_positions: int = 10
 
 @dataclass
