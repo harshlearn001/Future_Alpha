@@ -21,3 +21,6 @@ data/master/
 
 # --- IDE ---
 .vscode/
+future_alpha.egg-info/
+__pycache__/
+*.pyc

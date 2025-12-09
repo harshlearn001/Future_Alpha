@@ -28,3 +28,16 @@ class BacktestSettings:
 FEATURE_SETTINGS = FeatureSettings()
 SIGNAL_SETTINGS = SignalSettings()
 BACKTEST_SETTINGS = BacktestSettings()
+
+XGB_PARAMS = {
+    "objective": "binary:logistic",
+    "tree_method": "hist",
+    "device": "cuda",
+
+    "max_depth": 4,
+    "eta": 0.03,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "eval_metric": "auc"
+}
+
