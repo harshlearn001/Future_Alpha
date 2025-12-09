@@ -1,47 +1,46 @@
+from __future__ import annotations
+
 import pandas as pd
 
-# -------------------------------------------------
-# Load rankings
-# -------------------------------------------------
-df = pd.read_csv("data/processed/daily_ranking_latest.csv", parse_dates=["DATE"])
+RANK_FILE = "data/processed/daily_ranking_latest.csv"
 
-# ✅ Determine signal date from data (single source of truth)
-signal_date = df["DATE"].max()
 
-# -------------------------------------------------
-# BUY: Top 5
-# -------------------------------------------------
-buy = (
-    df.sort_values("RANK")
-      .head(5)
-      [["SYMBOL", "RANK", "SCORE"]]
-)
-buy["SIGNAL"] = "BUY"
+def main():
+    # -------------------------------------------------
+    # Load latest rankings
+    # -------------------------------------------------
+    df = pd.read_csv(RANK_FILE, parse_dates=["DATE"])
 
-buy_symbols = set(buy["SYMBOL"])
+    if df.empty:
+        raise ValueError("daily_ranking_latest.csv is empty")
 
-# -------------------------------------------------
-# SELL / AVOID: lowest score NOT in BUY
-# -------------------------------------------------
-sell = (
-    df[~df["SYMBOL"].isin(buy_symbols)]
-      .sort_values("SCORE")
-      .head(5)
-      [["SYMBOL", "RANK", "SCORE"]]
-)
-sell["SIGNAL"] = "SELL"
+    # ✅ Last traded date (from data, single source of truth)
+    signal_date = df["DATE"].max().date()
+    date_str = signal_date.strftime("%d-%m-%Y")
 
-# -------------------------------------------------
-# Combine + add DATE
-# -------------------------------------------------
-signals = pd.concat([buy, sell], ignore_index=True)
+    # -------------------------------------------------
+    # BUY: Top 5 only
+    # -------------------------------------------------
+    buy = (
+        df.sort_values("RANK")
+          .head(5)[["SYMBOL", "RANK", "SCORE"]]
+          .copy()
+    )
 
-signals.insert(0, "SIGNAL_DATE", signal_date.strftime("%Y-%m-%d"))
+    buy.insert(0, "SIGNAL_DATE", signal_date)
+    buy["SIGNAL"] = "BUY"
 
-out_path = "data/processed/trade_signals_tomorrow.csv"
-signals.to_csv(out_path, index=False)
+    # -------------------------------------------------
+    # Save
+    # -------------------------------------------------
+    out_file = f"data/processed/trade_signals_for_{date_str}.csv"
+    buy.to_csv(out_file, index=False)
 
-print("\n✅ TRADE SIGNALS GENERATED")
-print(signals)
-print(f"\n📅 Signal Date  : {signal_date.date()}")
-print(f"📁 Saved to    : {out_path}")
+    print("\n✅ BUY SIGNALS GENERATED")
+    print(buy)
+    print(f"\n📅 Signal Date : {signal_date}")
+    print(f"📁 Saved to    : {out_file}")
+
+
+if __name__ == "__main__":
+    main()
