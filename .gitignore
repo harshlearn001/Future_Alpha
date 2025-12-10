@@ -9,18 +9,17 @@ __pycache__/
 .env
 .env.*
 
-# --- Data (DO NOT COMMIT DATA) ---
+# --- IDE ---
+.vscode/
+future_alpha.egg-info/
+
+# --- Data (runtime / generated - DO NOT COMMIT) ---
 data/raw/
 data/external/
 data/processed/
 data/cleaned/
 data/master/
 
-# --- CSVs (generated outputs) ---
+# Optional: ignore everything inside data
+# data/
 *.csv
-
-# --- IDE ---
-.vscode/
-future_alpha.egg-info/
-__pycache__/
-*.pyc
