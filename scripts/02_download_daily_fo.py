@@ -1,13 +1,19 @@
+# =====================================================
+# Future_Alpha | STEP 1
+# NSE FO Daily Bhavcopy Downloader (Automation Safe)
+# =====================================================
+
+import sys
 import requests
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# ================= PATHS =================
+# ---------------- PATHS ----------------
 ROOT = Path(__file__).resolve().parents[1]
 SAVE_DIR = ROOT / "data" / "raw" / "daily_raw"
 SAVE_DIR.mkdir(parents=True, exist_ok=True)
 
-# ================= NSE URL =================
+# ---------------- NSE URL ----------------
 BASE_URL = "https://nsearchives.nseindia.com/archives/fo/mkt/fo{date}.zip"
 
 HEADERS = {
@@ -15,10 +21,16 @@ HEADERS = {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/121.0.0.0 Safari/537.36"
-    )
+    ),
+    "Accept": "*/*",
+    "Connection": "keep-alive",
 }
 
-# ================= DOWNLOAD ONE DAY =================
+# ---------------- HELPERS ----------------
+def is_weekday(d: datetime) -> bool:
+    return d.weekday() < 5
+
+
 def try_download(d: datetime) -> bool:
     date_str = d.strftime("%d%m%Y")
     url = BASE_URL.format(date=date_str)
@@ -35,47 +47,38 @@ def try_download(d: datetime) -> bool:
             out.write_bytes(r.content)
             print(f"✅ Downloaded: fo{date_str}.zip")
             return True
-        else:
-            print(f"❌ Not available: fo{date_str}.zip")
-            return False
+
+        print(f"❌ Not available: fo{date_str}.zip (status={r.status_code})")
+        return False
 
     except Exception as e:
-        print(f"⚠ Error {date_str}: {e}")
+        print(f"⚠ Network error for {date_str}: {e}")
         return False
 
 
-# ================= ASK DATE =================
-def ask_date():
-    user = input("📅 Enter date (DD-MM-YYYY) [Enter = today]: ").strip()
+# ---------------- MAIN ----------------
+def main() -> int:
+    print("\n📥 STEP 1 | NSE FO BHAVCOPY DOWNLOAD")
+    print("-" * 60)
 
-    if not user:
-        return datetime.today()
+    d = datetime.today()
+    lookback = 10
 
-    try:
-        return datetime.strptime(user, "%d-%m-%Y")
-    except ValueError:
-        print("❌ Invalid format. Use DD-MM-YYYY")
-        exit(1)
+    print(f"📅 Starting lookup from: {d.strftime('%d-%b-%Y')}")
 
-
-# ================= MAIN =================
-if __name__ == "__main__":
-    print("\n📥 FUTURE_ALPHA | NSE FO BHAVCOPY DOWNLOADER")
-
-    start_date = ask_date()
-    days_back = 10
-
-    d = start_date
-
-    print(f"📅 Starting from: {d.strftime('%d-%b-%Y')}")
-
-    attempts = 0
-    while attempts < days_back:
-        if d.weekday() < 5:  # Mon–Fri
-            success = try_download(d)
-            if success:
-                break
+    for _ in range(lookback):
+        if is_weekday(d):
+            if try_download(d):
+                print("🏁 FO download successful")
+                return 0
         d -= timedelta(days=1)
-        attempts += 1
 
-    print("✅ Done")
+    # NOT A HARD FAILURE (market closed / not published yet)
+    print("⚠️ No new FO bhavcopy found in lookback window")
+    print("ℹ️ Using last available data")
+    return 0
+
+
+if __name__ == "__main__":
+    exit_code = main()
+    sys.exit(exit_code)

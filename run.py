@@ -4,9 +4,9 @@ from __future__ import annotations
 Future_Alpha - Daily Ranking + Position Sizing Pipeline
 """
 
-print("Future Alpha Ready")
-
+import sys
 import pandas as pd
+from datetime import datetime
 
 from src.config.paths import ensure_dirs, PROCESSED_DIR
 from src.data.universe import get_active_symbols_list
@@ -55,25 +55,43 @@ def main():
     ensure_dirs()
     logger = setup_logger()
 
+    logger.info("🚀 Future_Alpha Daily Ranking Pipeline Started")
+
     # =================================================
     # 1️⃣ LOAD DAILY CLEAN FO
     # =================================================
     daily_df = load_clean_daily()
     daily_df = normalize_columns(daily_df)
 
-    logger.info(f"Loaded clean daily FO with {len(daily_df)} rows")
+    if daily_df.empty:
+        raise RuntimeError("Daily clean FO file is empty")
 
     expiry_col = detect_expiry_column(daily_df)
     close_col = detect_close_column(daily_df)
     oi_col = detect_oi_column(daily_df)
 
     daily_df[expiry_col] = pd.to_datetime(daily_df[expiry_col])
+    daily_df["DATE"] = pd.to_datetime(daily_df["DATE"])
+
+    trade_date = daily_df["DATE"].max().date()
+    logger.info(f"Trade date detected: {trade_date}")
 
     # =================================================
-    # 2️⃣ CURRENT CONTRACT
+    # 2️⃣ SELECT CURRENT (FRONT) CONTRACT ✅
     # =================================================
-    idx = daily_df.groupby("SYMBOL")[expiry_col].idxmax()
-    daily_today = daily_df.loc[idx].reset_index(drop=True)
+    today = pd.Timestamp(trade_date)
+
+    daily_df = daily_df[daily_df[expiry_col] >= today]
+
+    idx = (
+        daily_df
+        .sort_values(expiry_col)
+        .groupby("SYMBOL", as_index=False)
+        .head(1)
+        .index
+    )
+
+    daily_today = daily_df.loc[idx].copy().reset_index(drop=True)
 
     daily_today = daily_today.rename(
         columns={
@@ -89,10 +107,13 @@ def main():
             else 0.0
         )
 
+    logger.info(f"Front contract universe: {len(daily_today)} symbols")
+
     # =================================================
     # 3️⃣ CONTINUOUS FEATURES
     # =================================================
     rows = []
+
     for sym in get_active_symbols_list():
         try:
             hist = load_symbol_history(sym)
@@ -100,6 +121,7 @@ def main():
             continue
 
         hist.columns = [c.lower() for c in hist.columns]
+
         if "adj_close" not in hist.columns:
             continue
 
@@ -112,16 +134,24 @@ def main():
 
     feat_df = pd.DataFrame(rows)
 
+    required_feats = {"vol_20d"}
+    feat_df = feat_df.dropna(subset=required_feats)
+
     merged = daily_today.merge(feat_df, on="SYMBOL", how="inner")
-    logger.info(f"Universe after merge: {len(merged)} symbols")
+
+    if merged.empty:
+        raise RuntimeError("No symbols left after feature merge")
+
+    logger.info(f"Universe after feature merge: {len(merged)} symbols")
 
     # =================================================
     # 4️⃣ RANKINGS
     # =================================================
     ranked = build_cross_sectional_score(merged)
+    ranked.insert(0, "DATE", trade_date)
 
     # =================================================
-    # 5️⃣ POSITION SIZING ✅✅✅
+    # 5️⃣ POSITION SIZING
     # =================================================
     positions = vol_target_weights(
         ranked,
@@ -130,22 +160,31 @@ def main():
         max_weight=0.20,
     )
 
-    cols = ["SYMBOL", "RANK", "SCORE", "vol_20d", "weight"]
+    cols = ["DATE", "SYMBOL", "RANK", "SCORE", "vol_20d", "weight"]
     cols = [c for c in cols if c in positions.columns]
 
-    print("\n📊 FINAL POSITION SIZES:")
+    print("\n📊 FINAL POSITION SIZES")
     print(positions[cols].to_string(index=False))
 
     pos_path = PROCESSED_DIR / "daily_positions_latest.csv"
     positions[cols].to_csv(pos_path, index=False)
-    logger.info(f"✅ Daily positions saved: {pos_path}")
+
+    logger.info(f"✅ Daily positions saved → {pos_path}")
 
     # =================================================
     # 6️⃣ SAVE RANKING
     # =================================================
-    ranked.to_csv(PROCESSED_DIR / "daily_ranking_latest.csv", index=False)
-    logger.info("✅ Ranking saved")
+    rank_path = PROCESSED_DIR / "daily_ranking_latest.csv"
+    ranked.to_csv(rank_path, index=False)
+
+    logger.info(f"✅ Ranking saved → {rank_path}")
+    logger.info("🎯 PIPELINE COMPLETED SUCCESSFULLY")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        sys.exit(0)
+    except Exception as e:
+        print(f"❌ PIPELINE FAILED: {e}")
+        sys.exit(1)

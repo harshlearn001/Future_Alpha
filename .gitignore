@@ -39,3 +39,4 @@ data/processed/
 *.log
 *.tmp
 .DS_Store
+logs/
