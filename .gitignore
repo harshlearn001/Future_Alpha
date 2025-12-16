@@ -1,25 +1,41 @@
-# --- Python ---
+# -----------------------
+# Python
+# -----------------------
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
 
-# --- Jupyter ---
+# -----------------------
+# Jupyter
+# -----------------------
 .ipynb_checkpoints/
 
-# --- Environment ---
+# -----------------------
+# Environment / Secrets
+# -----------------------
 .env
 .env.*
 
-# --- IDE ---
+# -----------------------
+# IDE
+# -----------------------
 .vscode/
-future_alpha.egg-info/
 
-# --- Data (runtime / generated - DO NOT COMMIT) ---
+# -----------------------
+# Data (runtime / generated)
+# -----------------------
 data/raw/
-data/external/
 data/processed/
-data/cleaned/
-data/master/
 
-# Optional: ignore everything inside data
-# data/
-*.csv
+# Keep cleaned & master (IMPORTANT)
+# data/cleaned/   <-- KEEP TRACKED
+# data/master/    <-- KEEP TRACKED
+
+# -----------------------
+# Logs / temp
+# -----------------------
+*.log
+*.tmp
+.DS_Store
