@@ -1,101 +1,78 @@
-from __future__ import annotations
-
 import pandas as pd
-from pathlib import Path
+from datetime import datetime
 
-from src.config.paths import PROCESSED_DIR
-from src.signals.rules import build_cross_sectional_score
-from src.utils.logging import setup_logger
+RANK_FILE = r"H:\Future_Alpha\data\processed\daily_ranking_latest.csv"
+ML_FILE   = r"H:\Future_Alpha\data\processed\daily_ranking_latest_ml.csv"
+OUT_FILE  = r"H:\Future_Alpha\data\processed\confluence_trades.csv"
 
+TOP_ML   = 30   # ML strength filter
+TOP_RANK = 30   # Price ranking filter
 
-# ✅ SINGLE SOURCE OF TRUTH
-SYMBOLS_DIR = Path(r"H:\Future_Alpha\data\master\symbols")
+print("\n🚀 Building ML + Ranking Confluence Trades\n")
 
+# Load files
+rank = pd.read_csv(RANK_FILE)
+ml   = pd.read_csv(ML_FILE)
 
-def main():
-    logger = setup_logger()
-    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+# Normalize symbols
+rank["SYMBOL"] = rank["SYMBOL"].str.upper().str.strip()
+ml["SYMBOL"]   = ml["SYMBOL"].str.upper().str.strip()
 
-    all_rows = []
+# Rename columns cleanly
+ml = ml.rename(columns={
+    "SYMBOL": "symbol",
+    "ml_score": "ml_score",
+    "RANK": "ml_rank"
+})
 
-    logger.info("🚀 Building daily rankings from SYMBOL MASTER")
+rank = rank.rename(columns={
+    "SYMBOL": "symbol",
+    "RANK": "rank_rank"
+})
 
-    # -------------------------------------------------
-    # Load per-symbol master CSVs (latest data)
-    # -------------------------------------------------
-    for path in SYMBOLS_DIR.glob("*.csv"):
-        symbol = path.stem
+# -----------------------------
+# 1️⃣ FILTER TOP ML SIGNALS
+# -----------------------------
+ml = ml.sort_values("ml_score", ascending=False).head(TOP_ML)
+print(f"✔ Top ML signals selected: {len(ml)}")
 
-        
-        df = pd.read_csv(path, parse_dates=["date", "expiry"])
-        df = df.sort_values("date")
+# -----------------------------
+# 2️⃣ MERGE WITH DAILY RANKING
+# -----------------------------
+merged = ml.merge(
+    rank[["symbol", "rank_rank", "SCORE", "trend_boost"]],
+    on="symbol",
+    how="inner"
+)
 
-# ✅ normalize price columns
-        if "adj_close" not in df.columns:
-            df["adj_close"] = df["close"]
+print(f"✔ Symbols after merge: {len(merged)}")
 
-        # -------------------------------------------------
-        # Features
-        # -------------------------------------------------
-        df["mom_3d"] = df["close"].pct_change(3)
-        df["mom_5d"] = df["close"].pct_change(5)
-        df["mom_10d"] = df["close"].pct_change(10)
+# -----------------------------
+# 3️⃣ FILTER TOP PRICE RANKS
+# -----------------------------
+merged = merged[merged["rank_rank"] <= TOP_RANK]
+print(f"✔ Symbols within top {TOP_RANK} ranks: {len(merged)}")
 
-        # OI features
-        df["oi_chg_1d"] = df["oi"].pct_change(1)
-        df["oi_5d_avg"] = df["oi"].rolling(5).mean()
-        df["oi_breakout"] = df["oi"] / df["oi_5d_avg"]
+# -----------------------------
+# 4️⃣ FINAL OUTPUT
+# -----------------------------
+merged["generated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        df["SYMBOL"] = symbol
+final = merged[[
+    "symbol",
+    "ml_score",
+    "rank_rank",
+    "SCORE",
+    "trend_boost",
+    "generated_at"
+]].sort_values(
+    ["ml_score", "SCORE"],
+    ascending=False
+)
 
-        all_rows.append(df)
+print("\n✅ FINAL CONFLUENCE TRADE SHEET")
+print(final)
 
-    if not all_rows:
-        raise RuntimeError("❌ No symbol data loaded")
-
-    # -------------------------------------------------
-    # Combine universe
-    # -------------------------------------------------
-    full = pd.concat(all_rows, ignore_index=True)
-
-    full = full.dropna(
-        subset=["mom_10d", "oi_breakout"]
-    )
-
-    logger.info(
-        f"📊 Universe: {full['SYMBOL'].nunique()} symbols | "
-        f"{full['date'].nunique()} dates"
-    )
-
-    # -------------------------------------------------
-    # Cross-sectional ranking (DATE-wise)
-    # -------------------------------------------------
-    rankings = []
-
-    for date, grp in full.groupby("date"):
-        ranked = build_cross_sectional_score(grp)
-        ranked["DATE"] = date
-        rankings.append(ranked)
-
-    final = pd.concat(rankings, ignore_index=True)
-
-    # -------------------------------------------------
-    # Outputs
-    # -------------------------------------------------
-    hist_out = PROCESSED_DIR / "daily_ranking_history.csv"
-    final.to_csv(hist_out, index=False)
-
-    latest_date = final["DATE"].max()
-    latest = final[final["DATE"] == latest_date]
-
-    latest_out = PROCESSED_DIR / "daily_ranking_latest.csv"
-    latest.to_csv(latest_out, index=False)
-
-    logger.info(f"✅ Rankings written")
-    logger.info(f"📅 Latest date: {latest_date}")
-    logger.info(f"📁 {hist_out}")
-    logger.info(f"📁 {latest_out}")
-
-
-if __name__ == "__main__":
-    main()
+final.to_csv(OUT_FILE, index=False)
+print(f"\n📁 Saved to: {OUT_FILE}")
+print("✔ Done.\n")
