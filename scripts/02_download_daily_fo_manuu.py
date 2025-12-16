@@ -1,3 +1,14 @@
+"""
+MANUAL / FALLBACK SCRIPT
+
+Purpose:
+- Manual NSE FO bhavcopy download
+- Used only when daily_run.ps1 fails
+- NOT part of automated daily pipeline
+
+Safe to keep for debugging / emergency recovery.
+"""
+
 import requests
 from datetime import datetime, timedelta
 from pathlib import Path
