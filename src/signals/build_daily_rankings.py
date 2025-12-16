@@ -1,78 +1,164 @@
+from __future__ import annotations
+
 import pandas as pd
-from datetime import datetime
+from pathlib import Path
+import sys
 
-RANK_FILE = r"H:\Future_Alpha\data\processed\daily_ranking_latest.csv"
-ML_FILE   = r"H:\Future_Alpha\data\processed\daily_ranking_latest_ml.csv"
-OUT_FILE  = r"H:\Future_Alpha\data\processed\confluence_trades.csv"
+# =====================================================
+# PATHS
+# =====================================================
+ROOT = Path(__file__).resolve().parents[2]
 
-TOP_ML   = 30   # ML strength filter
-TOP_RANK = 30   # Price ranking filter
+MASTER_DIR = ROOT / "data" / "master" / "symbols"
+OUT_DIR    = ROOT / "data" / "processed"
+OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-print("\n🚀 Building ML + Ranking Confluence Trades\n")
+OUT_LATEST = OUT_DIR / "daily_ranking_latest.csv"
+OUT_HIST   = OUT_DIR / "daily_ranking_history.csv"
 
-# Load files
-rank = pd.read_csv(RANK_FILE)
-ml   = pd.read_csv(ML_FILE)
+print("\nSTEP 4 | BUILD FULL DAILY RANKINGS")
+print("-" * 60)
 
-# Normalize symbols
-rank["SYMBOL"] = rank["SYMBOL"].str.upper().str.strip()
-ml["SYMBOL"]   = ml["SYMBOL"].str.upper().str.strip()
+# =====================================================
+# HELPERS
+# =====================================================
+def detect_column(cols, candidates):
+    for c in candidates:
+        if c in cols:
+            return c
+    return None
 
-# Rename columns cleanly
-ml = ml.rename(columns={
-    "SYMBOL": "symbol",
-    "ml_score": "ml_score",
-    "RANK": "ml_rank"
-})
 
-rank = rank.rename(columns={
-    "SYMBOL": "symbol",
-    "RANK": "rank_rank"
-})
+def main() -> int:
+    rows = []
+    skipped = []
 
-# -----------------------------
-# 1️⃣ FILTER TOP ML SIGNALS
-# -----------------------------
-ml = ml.sort_values("ml_score", ascending=False).head(TOP_ML)
-print(f"✔ Top ML signals selected: {len(ml)}")
+    # =====================================================
+    # LOAD MASTER SYMBOL FILES
+    # =====================================================
+    for file in MASTER_DIR.glob("*.csv"):
+        symbol = file.stem.upper().strip()
 
-# -----------------------------
-# 2️⃣ MERGE WITH DAILY RANKING
-# -----------------------------
-merged = ml.merge(
-    rank[["symbol", "rank_rank", "SCORE", "trend_boost"]],
-    on="symbol",
-    how="inner"
-)
+        try:
+            df = pd.read_csv(file)
+        except Exception:
+            skipped.append((symbol, "read_error"))
+            continue
 
-print(f"✔ Symbols after merge: {len(merged)}")
+        if df.empty:
+            skipped.append((symbol, "empty_file"))
+            continue
 
-# -----------------------------
-# 3️⃣ FILTER TOP PRICE RANKS
-# -----------------------------
-merged = merged[merged["rank_rank"] <= TOP_RANK]
-print(f"✔ Symbols within top {TOP_RANK} ranks: {len(merged)}")
+        # ---- normalize columns
+        df.columns = [c.upper().strip() for c in df.columns]
 
-# -----------------------------
-# 4️⃣ FINAL OUTPUT
-# -----------------------------
-merged["generated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 🔥 HARD FIX: DROP DUPLICATE COLUMNS (CRITICAL)
+        df = df.loc[:, ~df.columns.duplicated()]
 
-final = merged[[
-    "symbol",
-    "ml_score",
-    "rank_rank",
-    "SCORE",
-    "trend_boost",
-    "generated_at"
-]].sort_values(
-    ["ml_score", "SCORE"],
-    ascending=False
-)
+        date_col = detect_column(df.columns, ["DATE", "TRADE_DATE", "TIMESTAMP"])
+        close_col = detect_column(df.columns, ["CLOSE", "CLOSE_PRICE", "CLOSE_FUT"])
 
-print("\n✅ FINAL CONFLUENCE TRADE SHEET")
-print(final)
+        if not date_col or not close_col:
+            skipped.append((symbol, "missing_date_or_close"))
+            continue
 
-final.to_csv(OUT_FILE, index=False)
-print(f"\n📁 Saved to: {OUT_FILE}")
-print("✔ Done.\n")
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df = df.dropna(subset=[date_col, close_col])
+
+        if len(df) < 6:
+            skipped.append((symbol, "insufficient_history"))
+            continue
+
+        df = df.sort_values(date_col)
+
+        try:
+            latest = df.iloc[-1]
+            ret_1d = df[close_col].pct_change().iloc[-1]
+            ret_5d = df[close_col].pct_change(5).iloc[-1]
+            vol_10 = df[close_col].pct_change().rolling(10).std().iloc[-1]
+        except Exception:
+            skipped.append((symbol, "calc_error"))
+            continue
+
+        rows.append({
+            "DATE": latest[date_col],
+            "SYMBOL": symbol,
+            "CLOSE": float(latest[close_col]),
+            "RET_1D": ret_1d,
+            "RET_5D": ret_5d,
+            "VOL_10D": vol_10,
+        })
+
+    # =====================================================
+    # VALIDATION
+    # =====================================================
+    if not rows:
+        print(" No symbol data loaded")
+        return 1
+
+    ranked = pd.DataFrame(rows)
+
+    # SECOND SAFETY NET (ABSOLUTE)
+    ranked = ranked.loc[:, ~ranked.columns.duplicated()]
+
+    ranked["DATE"] = pd.to_datetime(ranked["DATE"], errors="coerce")
+
+    # Deduplicate symbols (latest only)
+    ranked = (
+        ranked.sort_values("DATE")
+              .drop_duplicates(subset=["SYMBOL"], keep="last")
+              .reset_index(drop=True)
+    )
+
+    ranked = ranked.dropna(subset=["RET_1D", "RET_5D"])
+
+    # =====================================================
+    # SCORING
+    # =====================================================
+    ranked["RANK_RET_5D"] = ranked["RET_5D"].rank(pct=True)
+    ranked["RANK_RET_1D"] = ranked["RET_1D"].rank(pct=True)
+
+    ranked["SCORE"] = ranked["RANK_RET_5D"] + ranked["RANK_RET_1D"]
+    ranked["TREND_BOOST"] = (ranked["RET_5D"] > 0).astype(int)
+
+    ranked = ranked.sort_values("SCORE", ascending=False).reset_index(drop=True)
+    ranked["RANK"] = ranked.index + 1
+
+    # =====================================================
+    # SAVE
+    # =====================================================
+    ranked.to_csv(OUT_LATEST, index=False)
+
+    if OUT_HIST.exists():
+        hist = pd.read_csv(OUT_HIST)
+        hist = hist.loc[:, ~hist.columns.duplicated()]
+        hist = pd.concat([hist, ranked], ignore_index=True)
+    else:
+        hist = ranked.copy()
+
+    hist.to_csv(OUT_HIST, index=False)
+
+    # =====================================================
+    # SUMMARY
+    # =====================================================
+    print("Daily ranking built successfully")
+    print(f" Symbols ranked : {len(ranked)}")
+    print(f" Latest saved   : {OUT_LATEST}")
+    print(f" History saved  : {OUT_HIST}")
+
+    print("\nTop 10 Preview:")
+    print(ranked[["SYMBOL", "RANK", "SCORE"]].head(10))
+
+    if skipped:
+        print(f"\nSkipped symbols: {len(skipped)}")
+        print(pd.DataFrame(skipped, columns=["SYMBOL", "REASON"]).head(10))
+
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as e:
+        print(f"Ranking failed: {e}")
+        sys.exit(1)

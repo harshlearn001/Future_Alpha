@@ -40,3 +40,16 @@ data/processed/
 *.tmp
 .DS_Store
 logs/
+# =============================
+# DATA (AUTO-GENERATED)
+# =============================
+data/master/symbols/*.csv
+data/cleaned/
+data/processed/*.csv
+
+# Logs
+logs/
+
+# Temporary / cache
+__pycache__/
+*.pyc

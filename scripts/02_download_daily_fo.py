@@ -37,7 +37,7 @@ def try_download(d: datetime) -> bool:
     out = SAVE_DIR / f"fo{date_str}.zip"
 
     if out.exists():
-        print(f"⏩ Already exists: fo{date_str}.zip")
+        print(f" Already exists: fo{date_str}.zip")
         return True
 
     try:
@@ -58,27 +58,31 @@ def try_download(d: datetime) -> bool:
 
 # ---------------- MAIN ----------------
 def main() -> int:
-    print("\n📥 STEP 1 | NSE FO BHAVCOPY DOWNLOAD")
+    print("\nSTEP 1 | NSE FO BHAVCOPY DOWNLOAD")
     print("-" * 60)
 
     d = datetime.today()
     lookback = 10
 
-    print(f"📅 Starting lookup from: {d.strftime('%d-%b-%Y')}")
+    print(f"Starting lookup from: {d.strftime('%d-%b-%Y')}")
 
     for _ in range(lookback):
         if is_weekday(d):
             if try_download(d):
-                print("🏁 FO download successful")
+                print("FO download successful")
                 return 0
         d -= timedelta(days=1)
 
     # NOT A HARD FAILURE (market closed / not published yet)
-    print("⚠️ No new FO bhavcopy found in lookback window")
-    print("ℹ️ Using last available data")
+    print(" No new FO bhavcopy found in lookback window")
+    print("Using last available data")
     return 0
 
 
 if __name__ == "__main__":
-    exit_code = main()
-    sys.exit(exit_code)
+    try:
+        main()
+        sys.exit(0)
+    except Exception as e:
+        print("Download failed:", e)
+        sys.exit(1)

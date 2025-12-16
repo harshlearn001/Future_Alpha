@@ -1,94 +1,84 @@
-import zipfile
-from io import StringIO
+from __future__ import annotations
+
+import sys
 from pathlib import Path
+import zipfile
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
-ZIP_DIR = ROOT / "data" / "raw" / "daily_raw"
-OUT_DIR = ROOT / "data" / "cleaned" / "cleaned_daily"
+# =====================================================
+# CONFIG
+# =====================================================
+RAW_DIR = Path("data/raw/daily_raw")
+OUT_DIR = Path("data/cleaned/cleaned_daily")
+
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-REQUIRED = {"INSTRUMENT", "SYMBOL", "EXP_DATE"}
+# =====================================================
+# MAIN LOGIC
+# =====================================================
+def main():
+    print("STEP 2 | CLEAN DAILY FO DATA")
+    print("-" * 60)
 
+    zips = sorted(RAW_DIR.glob("fo*.zip"))
 
-def find_header_start(text: str):
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        if line.upper().startswith("INSTRUMENT"):
-            return i
-    return None
-
-
-def clean_latest_zip():
-    zips = sorted(ZIP_DIR.glob("fo*.zip"))
     if not zips:
-        print("❌ No FO zip found")
+        print("No FO zip files found. Nothing to clean.")
         return
 
-    zip_path = zips[-1]
-    print(f"🧼 Cleaning daily FO bhavcopy → {zip_path.name}")
+    for zip_path in zips:
+        date_tag = zip_path.stem.replace("fo", "")
+        out_file = OUT_DIR / f"daily_clean_{date_tag}.csv"
 
-    date_str = zip_path.stem.replace("fo", "")
+        if out_file.exists():
+            print(f"Already cleaned: {out_file.name}")
+            continue
 
-    with zipfile.ZipFile(zip_path, "r") as z:
-        for name in z.namelist():
-            if not name.lower().endswith(".csv"):
+        print(f"Cleaning: {zip_path.name}")
+
+        with zipfile.ZipFile(zip_path, "r") as z:
+            csv_files = [n for n in z.namelist() if n.lower().endswith(".csv")]
+
+            if not csv_files:
+                print(f"No CSV inside {zip_path.name}, skipping")
                 continue
 
-            raw = z.read(name).decode("utf-8", errors="ignore")
-            start = find_header_start(raw)
+            with z.open(csv_files[0]) as f:
+                df = pd.read_csv(f)
 
-            if start is None:
-                continue
+        if df.empty:
+            print(f"Empty data in {zip_path.name}, skipping")
+            continue
 
-            df = pd.read_csv(StringIO(raw), skiprows=start)
+        # -----------------------------
+        # NORMALIZE COLUMNS
+        # -----------------------------
+        df.columns = [c.strip().upper() for c in df.columns]
 
-            df.columns = (
-                df.columns.astype(str)
-                .str.upper()
-                .str.strip()
-                .str.replace("*", "", regex=False)
-            )
+        required = {"SYMBOL", "OPEN", "HIGH", "LOW", "CLOSE", "VOLUME"}
+        missing = required - set(df.columns)
 
-            if REQUIRED.issubset(df.columns):
-                print(f"✅ Using futures table → {name}")
-                break
-        else:
-            print("❌ Futures table not found in zip")
-            return
+        if missing:
+            raise ValueError(f"Missing columns {missing} in {zip_path.name}")
 
-    # ✅ Filter futures only
-    df["INSTRUMENT"] = df["INSTRUMENT"].astype(str).str.strip().str.upper()
-    df = df[df["INSTRUMENT"].isin(["FUTSTK", "FUTIDX"])]
+        df = df[list(required)]
 
-    if df.empty:
-        print("⚠️ Futures table found but no FUTSTK/FUTIDX rows")
-        return
+        # -----------------------------
+        # SAVE
+        # -----------------------------
+        df.to_csv(out_file, index=False)
+        print(f"Saved: {out_file.name}")
 
-    df = df.rename(columns={
-        "SYMBOL": "symbol",
-        "EXP_DATE": "expiry",
-        "OPEN_PRICE": "open",
-        "HI_PRICE": "high",
-        "LO_PRICE": "low",
-        "CLOSE_PRICE": "close",
-        "TRD_QTY": "volume",
-        "OPEN_INT": "oi",
-    })
-
-    df["date"] = pd.to_datetime(date_str, format="%d%m%Y")
-    df["expiry"] = pd.to_datetime(df["expiry"], dayfirst=True, errors="coerce")
-
-    df = df[
-        ["symbol", "date", "open", "high", "low", "close", "volume", "oi", "expiry"]
-    ]
-
-    out = OUT_DIR / f"daily_clean_{date_str}.csv"
-    df.to_csv(out, index=False)
-
-    print(f"✅ CLEAN DAILY SAVED → {out}")
-    print(f"📊 Rows: {len(df)}")
+    print("Daily FO cleaning completed successfully")
 
 
+# =====================================================
+# ENTRY POINT (AUTOMATION SAFE)
+# =====================================================
 if __name__ == "__main__":
-    clean_latest_zip()
+    try:
+        main()
+        sys.exit(0)
+    except Exception as e:
+        print("Cleaning failed:", e)
+        sys.exit(1)
