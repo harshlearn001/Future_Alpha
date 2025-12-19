@@ -2,6 +2,10 @@
 # Future_Alpha | Daily One-Command Pipeline (SAFE)
 # =====================================================
 
+# ---------------- FORCE UTF-8 ----------------
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$OutputEncoding = [System.Text.UTF8Encoding]::new()
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
@@ -41,7 +45,7 @@ Log file  : $LOG_FILE
 "@ | Tee-Object -FilePath $LOG_FILE
 
 # =====================================================
-# HELPER: RUN PYTHON STEP SAFELY
+# HELPER: SAFE PYTHON RUNNER
 # =====================================================
 function Run-PythonStep {
     param (
@@ -49,16 +53,15 @@ function Run-PythonStep {
         [string]$ScriptPath
     )
 
-    Write-Host "`n> $Title"
+    Write-Host "`n▶ $Title"
 
-    # Temporarily disable PowerShell panic on stderr
+    # Allow stderr without killing pipeline
     $oldPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
 
     & $PYTHON -u $ScriptPath *>> $LOG_FILE
     $exitCode = $LASTEXITCODE
 
-    # Restore strict behavior
     $ErrorActionPreference = $oldPreference
 
     if ($exitCode -ne 0) {
@@ -67,9 +70,8 @@ function Run-PythonStep {
         exit 1
     }
 
-    Write-Host "DONE: $Title"
+    Write-Host "✅ DONE: $Title"
 }
-
 
 # =====================================================
 # STEP 1: Download Daily F&O Data
@@ -86,7 +88,7 @@ Run-PythonStep `
     "scripts\03_clean_daily_fo.py"
 
 # =====================================================
-# STEP 3: Append to Master
+# STEP 3: Append Cleaned Data to Master
 # =====================================================
 Run-PythonStep `
     "Step 3: Append to master" `
@@ -104,7 +106,7 @@ Run-PythonStep `
 # =====================================================
 Run-PythonStep `
     "Step 5: Generate confluence trades" `
-    "scripts\generate_trade_signals.py"
+    "src\signals\combine_ml_rankings.py"
 
 # =====================================================
 # STEP 6: Position Sizing
@@ -122,4 +124,4 @@ PIPELINE COMPLETED SUCCESSFULLY
 -------------------------------------
 "@ | Tee-Object -FilePath $LOG_FILE -Append
 
-Write-Host "`n✅ PIPELINE COMPLETED SUCCESSFULLY" -ForegroundColor Green
+Write-Host "🚀 PIPELINE COMPLETED SUCCESSFULLY" -ForegroundColor Green
