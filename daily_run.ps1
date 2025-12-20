@@ -1,8 +1,13 @@
 # =====================================================
 # Future_Alpha | Daily One-Command Pipeline (SAFE)
 # =====================================================
+# ✔ PowerShell 5.1 compatible
+# ✔ No Unicode / Emoji
+# ✔ Scheduler safe
+# ✔ Pipeline-safe (controlled exits)
+# =====================================================
 
-# ---------------- FORCE UTF-8 ----------------
+# ---------------- FORCE UTF-8 (best effort) ----------------
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
 
@@ -21,7 +26,7 @@ $DATE_TAG = Get-Date -Format "yyyy-MM-dd"
 $PYTHON = "C:\Users\Harshal\anaconda3\envs\TradeSense\python.exe"
 
 if (!(Test-Path $PYTHON)) {
-    Write-Host "❌ Python not found: $PYTHON" -ForegroundColor Red
+    Write-Host "ERROR: Python not found: $PYTHON" -ForegroundColor Red
     exit 1
 }
 
@@ -45,7 +50,7 @@ Log file  : $LOG_FILE
 "@ | Tee-Object -FilePath $LOG_FILE
 
 # =====================================================
-# HELPER: SAFE PYTHON RUNNER
+# HELPER: SAFE PYTHON STEP RUNNER
 # =====================================================
 function Run-PythonStep {
     param (
@@ -53,9 +58,12 @@ function Run-PythonStep {
         [string]$ScriptPath
     )
 
-    Write-Host "`n▶ $Title"
+    Write-Host ""
+    Write-Host "STEP: $Title"
+    Add-Content $LOG_FILE ""
+    Add-Content $LOG_FILE "STEP: $Title"
 
-    # Allow stderr without killing pipeline
+    # Allow Python stderr without killing PowerShell
     $oldPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
 
@@ -65,54 +73,54 @@ function Run-PythonStep {
     $ErrorActionPreference = $oldPreference
 
     if ($exitCode -ne 0) {
-        Write-Host "❌ FAILED: $Title" -ForegroundColor Red
-        Write-Host "📄 Check log: $LOG_FILE" -ForegroundColor Yellow
+        Write-Host "FAILED: $Title" -ForegroundColor Red
+        Write-Host "Check log: $LOG_FILE" -ForegroundColor Yellow
         exit 1
     }
 
-    Write-Host "✅ DONE: $Title"
+    Write-Host "DONE: $Title"
 }
 
 # =====================================================
-# STEP 1: Download Daily F&O Data
+# STEP 1: Download Daily FO Data
 # =====================================================
 Run-PythonStep `
-    "Step 1: Download daily FO data" `
+    "Download daily FO data" `
     "scripts\02_download_daily_fo.py"
 
 # =====================================================
-# STEP 2: Clean Daily F&O Data
+# STEP 2: Clean Daily FO Data
 # =====================================================
 Run-PythonStep `
-    "Step 2: Clean daily FO data" `
+    "Clean daily FO data" `
     "scripts\03_clean_daily_fo.py"
 
 # =====================================================
-# STEP 3: Append Cleaned Data to Master
+# STEP 3: Append Daily Data to Master
 # =====================================================
 Run-PythonStep `
-    "Step 3: Append to master" `
+    "Append daily data to master" `
     "scripts\04_append_daily_to_master.py"
 
 # =====================================================
-# STEP 4: Build FULL Daily Rankings
+# STEP 4: Build Full Daily Rankings
 # =====================================================
 Run-PythonStep `
-    "Step 4: Build full daily rankings" `
+    "Build full daily rankings" `
     "src\signals\build_daily_rankings.py"
 
 # =====================================================
-# STEP 5: ML + Ranking Confluence
+# STEP 5: Generate Confluence Trades
 # =====================================================
 Run-PythonStep `
-    "Step 5: Generate confluence trades" `
+    "Generate confluence trades" `
     "src\signals\combine_ml_rankings.py"
 
 # =====================================================
 # STEP 6: Position Sizing
 # =====================================================
 Run-PythonStep `
-    "Step 6: Position sizing" `
+    "Position sizing" `
     "src\portfolio\run_position_sizing.py"
 
 # =====================================================
@@ -122,6 +130,14 @@ Run-PythonStep `
 -------------------------------------
 PIPELINE COMPLETED SUCCESSFULLY
 -------------------------------------
+
+Signals:
+ data\signal\confluence\confluence_trades_DDMMYYYY.csv
+
+Orders:
+ data\signal\orders\trade_orders_DDMMYYYY.csv
+ data\signal\orders\trade_orders_today.csv
+-------------------------------------
 "@ | Tee-Object -FilePath $LOG_FILE -Append
 
-Write-Host "🚀 PIPELINE COMPLETED SUCCESSFULLY" -ForegroundColor Green
+Write-Host "PIPELINE COMPLETED SUCCESSFULLY" -ForegroundColor Green

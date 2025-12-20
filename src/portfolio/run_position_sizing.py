@@ -4,8 +4,9 @@ import pandas as pd
 from pathlib import Path
 import sys
 import warnings
+from datetime import datetime
 
-warnings.filterwarnings("ignore")  # 🔒 silence pandas warnings
+warnings.filterwarnings("ignore")  # silence pandas warnings
 
 # =====================================================
 # PATHS
@@ -15,15 +16,19 @@ warnings.filterwarnings("ignore")  # 🔒 silence pandas warnings
 # parents[2] → H:\Future_Alpha
 ROOT = Path(__file__).resolve().parents[2]
 
-SIGNAL_DIR = ROOT / "data" / "processed" / "signal.so"
-OUT_FILE   = ROOT / "data" / "processed" / "trade_orders_today.csv"
+# 🔹 INPUT: final signals only
+SIGNAL_DIR = ROOT / "data" / "signal" / "confluence"
+
+# 🔹 OUTPUT: broker-ready orders
+ORDER_DIR = ROOT / "data" / "signal" / "orders"
+ORDER_DIR.mkdir(parents=True, exist_ok=True)
 
 # =====================================================
 # CONFIG
 # =====================================================
-CAPITAL    = 1_000_000   # ₹10,00,000 total capital
-RISK_PCT   = 0.01        # 1% risk per trade
-MAX_TRADES = 5           # Max trades per day
+CAPITAL    = 1_000_000    # ₹10,00,000 total capital
+RISK_PCT   = 0.01         # 1% risk per trade
+MAX_TRADES = 5            # Max trades per day
 
 print("\nSTEP 6 | POSITION SIZING")
 print("-" * 60)
@@ -31,28 +36,36 @@ print("-" * 60)
 def main() -> None:
     try:
         # -------------------------------------------------
-        # Locate latest signal file (DATED)
+        # Locate latest confluence signal file
         # -------------------------------------------------
         files = sorted(SIGNAL_DIR.glob("confluence_trades_*.csv"))
 
         if not files:
-            print("No confluence signal files found")
+            print(" No confluence signal files found")
             return
 
         IN_FILE = files[-1]
-        print(f"📥 Using signal file: {IN_FILE.name}")
+        print(f" Using signal file: {IN_FILE.name}")
 
         df = pd.read_csv(IN_FILE)
 
         if df.empty:
-            print("No trades today")
+            print(" No trades today")
             return
 
         df.columns = [c.upper().strip() for c in df.columns]
 
         if "SYMBOL" not in df.columns:
-            print("Invalid confluence structure")
+            print(" Invalid confluence file structure")
             return
+
+        # -------------------------------------------------
+        # Extract trade date (DDMMYYYY)
+        # -------------------------------------------------
+        if "TRADE_DATE_DDMMYYYY" in df.columns:
+            trade_date = str(df["TRADE_DATE_DDMMYYYY"].iloc[0])
+        else:
+            trade_date = datetime.now().strftime("%d%m%Y")
 
         # -------------------------------------------------
         # Limit number of trades
@@ -60,11 +73,9 @@ def main() -> None:
         df = df.head(MAX_TRADES).copy()
 
         # -------------------------------------------------
-        # Risk-based sizing (SAFE DEFAULT)
+        # Risk-based sizing (safe default)
         # -------------------------------------------------
         risk_per_trade = CAPITAL * RISK_PCT
-
-        # FIXED BUG: qty calculated as integer (not Series)
         qty = max(int(risk_per_trade / 100), 1)
 
         df["SIDE"] = "BUY"
@@ -83,22 +94,30 @@ def main() -> None:
                 "ORDER_TYPE",
                 "ENTRY_TYPE",
             ]
-        ]
+        ].copy()
 
-        orders.to_csv(OUT_FILE, index=False)
+        # -------------------------------------------------
+        # OUTPUT FILES
+        # -------------------------------------------------
+        dated_file = ORDER_DIR / f"trade_orders_{trade_date}.csv"
+        today_file = ORDER_DIR / "trade_orders_today.csv"
 
-        print("✅ Position sizing completed")
+        orders.to_csv(dated_file, index=False)
+        orders.to_csv(today_file, index=False)
+
+        print(" Position sizing completed")
         print(orders)
-        print("💾 Saved to:", OUT_FILE)
+        print(f" Saved dated  : {dated_file}")
+        print(f" Saved today : {today_file}")
 
     except Exception as e:
-        # ❗ DO NOT RAISE — pipeline-safe
+        #  Pipeline-safe: never crash daily run
         print("Position sizing warning:", e)
         return
 
 
 # =====================================================
-# ENTRY POINT — FORCE EXIT(0)
+# ENTRY POINT — FORCE CLEAN EXIT
 # =====================================================
 if __name__ == "__main__":
     main()

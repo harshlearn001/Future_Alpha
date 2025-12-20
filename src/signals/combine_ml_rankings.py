@@ -13,9 +13,9 @@ ROOT = Path(__file__).resolve().parents[2]
 RANK_FILE = ROOT / "data" / "processed" / "daily_ranking_latest.csv"
 ML_FILE   = ROOT / "data" / "processed" / "daily_ranking_latest_ml.csv"
 
-OUT_DIR = ROOT / "data" / "processed" / "signal.so"
+# ✅ NEW CLEAN OUTPUT LOCATION
+OUT_DIR = ROOT / "data" / "signal" / "confluence"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
-
 
 TOP_RANK = 30
 TOP_ML   = 30
@@ -28,20 +28,20 @@ def main() -> int:
     # Load ranking (mandatory)
     # -------------------------------------------------
     if not RANK_FILE.exists():
-        print("Ranking file not found:", RANK_FILE)
+        print(" Ranking file not found:", RANK_FILE)
         return 1
 
     rank = pd.read_csv(RANK_FILE)
 
     if rank.empty:
-        print("Ranking file is empty")
+        print(" Ranking file is empty")
         return 1
 
     rank.columns = [c.upper().strip() for c in rank.columns]
 
     required = {"SYMBOL", "RANK", "SCORE"}
     if not required.issubset(rank.columns):
-        print("Ranking file missing required columns:", rank.columns.tolist())
+        print(" Ranking file missing required columns:", rank.columns.tolist())
         return 1
 
     rank = rank.rename(columns={
@@ -66,7 +66,7 @@ def main() -> int:
             })
             ml = ml.sort_values("ml_score", ascending=False).head(TOP_ML)
         else:
-            print("ML file missing required columns, skipping ML merge")
+            print("⚠ML file missing required columns — skipping ML")
             use_ml = False
 
     # -------------------------------------------------
@@ -85,7 +85,7 @@ def main() -> int:
     merged = merged[merged["rank_rank"] <= TOP_RANK]
 
     if merged.empty:
-        print("No symbols after filters")
+        print(" No symbols after filters")
         return 0
 
     # -------------------------------------------------
@@ -103,26 +103,24 @@ def main() -> int:
     final = merged.sort_values(
         ["ml_score", "rank_score"],
         ascending=False
-    )[
-        [
-            "trade_date_ddmmyyyy",
-            "symbol",
-            "ml_score",
-            "rank_rank",
-            "rank_score",
-            "generated_at",
-        ]
-    ]
+    )[[
+        "trade_date_ddmmyyyy",
+        "symbol",
+        "ml_score",
+        "rank_rank",
+        "rank_score",
+        "generated_at",
+    ]]
 
     # -------------------------------------------------
-    # DATE-STAMPED OUTPUT FILE ✅
+    # OUTPUT (AUTO-MOVED PIPELINE)
     # -------------------------------------------------
     OUT_FILE = OUT_DIR / f"confluence_trades_{trade_date_ddmmyyyy}.csv"
     final.to_csv(OUT_FILE, index=False)
 
-    print("✅ Confluence trades generated")
+    print(" Confluence trades generated")
     print(final.head(10))
-    print("💾 Saved to:", OUT_FILE)
+    print(" Saved to:", OUT_FILE)
 
     return 0
 
@@ -131,5 +129,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as e:
-        print("Step 5 failed:", e)
+        print(" Step 5 failed:", e)
         sys.exit(1)

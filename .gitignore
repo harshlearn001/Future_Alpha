@@ -53,3 +53,24 @@ logs/
 # Temporary / cache
 __pycache__/
 *.pyc
+# --------------------
+# Runtime data
+# --------------------
+data/signal/
+data/cleaned/
+data/raw/
+data/master/
+logs/
+
+# --------------------
+
+# Python cache
+# --------------------
+__pycache__/
+*.pyc
+
+# --------------------
+# OS
+# --------------------
+.DS_Store
+Thumbs.db
