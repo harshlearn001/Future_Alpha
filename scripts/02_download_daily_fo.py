@@ -45,14 +45,14 @@ def try_download(d: datetime) -> bool:
 
         if r.status_code == 200 and len(r.content) > 50_000:
             out.write_bytes(r.content)
-            print(f"✅ Downloaded: fo{date_str}.zip")
+            print(f" Downloaded: fo{date_str}.zip")
             return True
 
-        print(f"❌ Not available: fo{date_str}.zip (status={r.status_code})")
+        print(f" Not available: fo{date_str}.zip (status={r.status_code})")
         return False
 
     except Exception as e:
-        print(f"⚠ Network error for {date_str}: {e}")
+        print(f"Network error for {date_str}: {e}")
         return False
 
 
