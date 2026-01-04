@@ -9,61 +9,64 @@ CLEAN DAILY FO BHAVCOPY (FUTURES ONLY)
 - Detects INSTRUMENT header
 - Supports OPEN_INT*
 - FUTIDX + FUTSTK only
-- Weekend / holiday safe
-- Pipeline-safe (no crashes)
+- ONE output file (DDMMYYYY)
+- PowerShell pipeline safe
 """
-
-from __future__ import annotations
 
 import sys
 import zipfile
 from io import StringIO
 from pathlib import Path
 import pandas as pd
+import warnings
 
-# ==================================================
+# --------------------------------------------------
+# SILENCE ALL WARNINGS (CRITICAL FOR POWERSHELL)
+# --------------------------------------------------
+warnings.filterwarnings("ignore")
+
+# --------------------------------------------------
 # PATHS
-# ==================================================
+# --------------------------------------------------
 ROOT = Path(__file__).resolve().parents[1]
-
 ZIP_DIR = ROOT / "data" / "raw" / "daily_raw"
 OUT_DIR = ROOT / "data" / "cleaned" / "cleaned_daily"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-OUT_CANONICAL = OUT_DIR / "fo_daily_clean.csv"
-
-# ==================================================
+# --------------------------------------------------
 # REQUIRED LOGICAL COLUMNS
-# ==================================================
+# --------------------------------------------------
 REQUIRED = {"INSTRUMENT", "SYMBOL", "EXP_DATE"}
 
-# ==================================================
+# --------------------------------------------------
 # HELPERS
-# ==================================================
+# --------------------------------------------------
 def safe_exit(msg: str) -> None:
-    print("SKIP:", msg)
+    print(msg)
     sys.exit(0)
 
 
-def find_header_start(text: str) -> int | None:
+def find_header_start(text: str):
     for i, line in enumerate(text.splitlines()):
         if line.strip().upper().startswith("INSTRUMENT"):
             return i
     return None
 
 
-# ==================================================
+# --------------------------------------------------
 # MAIN
-# ==================================================
-def clean_latest_zip() -> None:
+# --------------------------------------------------
+def clean_latest_zip():
     zips = sorted(ZIP_DIR.glob("fo*.zip"))
     if not zips:
         safe_exit("No FO zip found (market closed or download skipped)")
 
     zip_path = zips[-1]
-    print("Cleaning daily FO bhavcopy:", zip_path.name)
+    date_str = zip_path.stem.replace("fo", "")  # DDMMYYYY
 
-    date_str = zip_path.stem.replace("fo", "")
+    print("Cleaning daily FO bhavcopy:", zip_path.name)
+    print("Trade date detected:", date_str)
+
     df = None
 
     with zipfile.ZipFile(zip_path, "r") as z:
@@ -91,7 +94,7 @@ def clean_latest_zip() -> None:
                 break
 
     if df is None:
-        safe_exit("Instrument-level futures table not found")
+        safe_exit("Futures table not found (summary-only file)")
 
     # --------------------------------------------------
     # FUTURES ONLY
@@ -100,10 +103,10 @@ def clean_latest_zip() -> None:
     df = df[df["INSTRUMENT"].isin(["FUTIDX", "FUTSTK"])]
 
     if df.empty:
-        safe_exit("No FUTIDX/FUTSTK rows")
+        safe_exit("No FUTIDX/FUTSTK rows found")
 
     # --------------------------------------------------
-    # RENAME
+    # RENAME → STANDARD SCHEMA
     # --------------------------------------------------
     df = df.rename(columns={
         "SYMBOL": "symbol",
@@ -130,27 +133,24 @@ def clean_latest_zip() -> None:
     ]
 
     # --------------------------------------------------
-    # SAVE
+    # SAVE (ONE FILE ONLY)
     # --------------------------------------------------
-    dated_file = OUT_DIR / f"daily_clean_{date_str}.csv"
-
-    df.to_csv(OUT_CANONICAL, index=False)
-    df.to_csv(dated_file, index=False)
+    out_file = OUT_DIR / f"daily_clean_{date_str}.csv"
+    df.to_csv(out_file, index=False)
 
     print("CLEAN DAILY FO SAVED")
-    print("Canonical :", OUT_CANONICAL)
-    print("Dated     :", dated_file)
-    print("Rows      :", len(df))
-    print("Symbols   :", df["symbol"].nunique())
-
-    sys.exit(0)
+    print("Output file:", out_file)
+    print("Rows:", len(df))
+    print("Symbols:", df["symbol"].nunique())
 
 
-# ==================================================
-# ENTRY POINT
-# ==================================================
+# --------------------------------------------------
+# ENTRY POINT (STRICT)
+# --------------------------------------------------
 if __name__ == "__main__":
     try:
         clean_latest_zip()
+        sys.exit(0)
     except Exception as e:
-        safe_exit(f"FO clean skipped due to error: {e}")
+        print("CLEAN DAILY FO FAILED:", e)
+        sys.exit(1)
