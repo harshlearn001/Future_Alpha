@@ -1,10 +1,10 @@
 # =====================================================
 # Future_Alpha | Daily One-Command Pipeline (SAFE)
 # =====================================================
-# ✔ PowerShell 5.1 compatible
-# ✔ No Unicode / Emoji
-# ✔ Scheduler safe
-# ✔ Pipeline-safe (controlled exits)
+# PowerShell 5.1 compatible
+# Scheduler safe
+# Pipeline-safe (controlled exits)
+# Audit-grade logging
 # =====================================================
 
 # ---------------- FORCE UTF-8 (best effort) ----------------
@@ -38,6 +38,10 @@ if (!(Test-Path $LOG_DIR)) {
 
 $LOG_FILE = Join-Path $LOG_DIR "daily_run_$DATE_TAG.log"
 
+if (Test-Path $LOG_FILE) {
+    Write-Host "WARNING: Pipeline already executed today. Overwriting log." -ForegroundColor Yellow
+}
+
 # ---------------- HEADER ----------------
 @"
 =====================================
@@ -62,12 +66,18 @@ function Run-PythonStep {
     Write-Host "STEP: $Title"
     Add-Content $LOG_FILE ""
     Add-Content $LOG_FILE "STEP: $Title"
+    Add-Content $LOG_FILE ("Started at: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
+
+    if (!(Test-Path $ScriptPath)) {
+        Write-Host "ERROR: Script not found: $ScriptPath" -ForegroundColor Red
+        exit 1
+    }
 
     # Allow Python stderr without killing PowerShell
     $oldPreference = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
 
-    & $PYTHON -u $ScriptPath *>> $LOG_FILE
+    & $PYTHON -u $ScriptPath >> $LOG_FILE 2>&1
     $exitCode = $LASTEXITCODE
 
     $ErrorActionPreference = $oldPreference
@@ -78,6 +88,7 @@ function Run-PythonStep {
         exit 1
     }
 
+    Add-Content $LOG_FILE ("Completed at: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
     Write-Host "DONE: $Title"
 }
 
