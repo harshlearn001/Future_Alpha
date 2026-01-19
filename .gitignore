@@ -1,76 +1,66 @@
-# -----------------------
+# =============================
 # Python
-# -----------------------
+# =============================
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 *.egg-info/
 
-# -----------------------
+# =============================
 # Jupyter
-# -----------------------
+# =============================
 .ipynb_checkpoints/
 
-# -----------------------
+# =============================
 # Environment / Secrets
-# -----------------------
+# =============================
 .env
 .env.*
 
-# -----------------------
+# =============================
 # IDE
-# -----------------------
+# =============================
 .vscode/
 
-# -----------------------
-# Data (runtime / generated)
-# -----------------------
-data/raw/
-data/processed/
-
-# Keep cleaned & master (IMPORTANT)
-# data/cleaned/   <-- KEEP TRACKED
-# data/master/    <-- KEEP TRACKED
-
-# -----------------------
+# =============================
 # Logs / temp
-# -----------------------
+# =============================
 *.log
 *.tmp
-.DS_Store
 logs/
+
 # =============================
-# DATA (AUTO-GENERATED)
-# =============================
-data/master/symbols/*.csv
-data/cleaned/
-data/processed/*.csv
-
-# Logs
-logs/
-
-# Temporary / cache
-__pycache__/
-*.pyc
-# --------------------
-# Runtime data
-# --------------------
-data/signal/
-data/cleaned/
-data/raw/
-data/master/
-logs/
-
-# --------------------
-
-# Python cache
-# --------------------
-__pycache__/
-*.pyc
-
-# --------------------
 # OS
-# --------------------
+# =============================
 .DS_Store
 Thumbs.db
+
+# =============================
+# AUTO-GENERATED DATA (IGNORE)
+# =============================
+
+# Raw downloads (reproducible)
+data/raw/
+
+# Runtime signal outputs (daily)
+data/signal/
+
+# Processed intermediate files (rebuildable)
+data/processed/
+
+# =============================
+# TRACKED DATA (IMPORTANT)
+# =============================
+
+# Keep cleaned & master for reproducibility
+!data/cleaned/
+!data/cleaned/**
+
+!data/master/
+!data/master/**
+
+# =============================
+# Optional: Ignore local runtime caches
+# =============================
+*.cache
